@@ -1,6 +1,8 @@
-function Color(h: number, s: number, l: number) {
-  return `hsl(${h},${s}%,${l}%)`;
-}
+// function Color(h: number, s: number, l: number) {
+//   return `hsl(${h},${s}%,${l}%)`;
+// }
+
+
 
 class TextRegExp {
   text: string;
@@ -166,7 +168,7 @@ console.log("🟢", analiser.getHTMLRow());
 //     return resultado;
 //   }
 // }
-type Selectores =
+type Selectors =
   | "comment"
   | "comment.line"
   | "comment.block"
@@ -181,7 +183,7 @@ type Selectores =
   | "string"
   | "support"
   | "variable";
-type TextMateGramars = {
+type TextMateGrammars = {
   scopeName: string;
   fileTypes?: string[];
   foldingStartMarker?: string;
@@ -193,15 +195,15 @@ type TextMateGramars = {
     match?: string | RegExp;
     begin?: string | RegExp;
     end?: string | RegExp;
-    captures?: Record<number, Selectores>;
-    beginCaptures?: Record<number, Selectores>;
-    endCaptures?: Record<number, Selectores>;
+    captures?: Record<number, Selectors>;
+    beginCaptures?: Record<number, Selectors>;
+    endCaptures?: Record<number, Selectors>;
     include?: string;
   }[];
-  repository?: Record<string, TextMateGramars>;
+  repository?: Record<string, TextMateGrammars>;
 };
-const tmGramars: TextMateGramars[] = [];
-tmGramars.push({
+const tmGrammars: TextMateGrammars[] = [];
+tmGrammars.push({
   scopeName: "source.js",
   patterns: [
     {
