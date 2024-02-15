@@ -14,7 +14,6 @@ class TextScanner {
     this.lines = this.text.length;
     this.lastLineColumn = this.text[this.text.length - 1].length;
     this.isEndOfText = false;
-    
   }
 
   findNext(regexp: string | RegExp): RegExpExecArrayWithIndices | null {
@@ -22,13 +21,14 @@ class TextScanner {
       throw new Error("¡I'm done !");
     }
 
-    const searchRegex = new RegExp(regexp, "dym") ;
+    const searchRegex = new RegExp(regexp, "dy");
     searchRegex.lastIndex = this.column;
 
-    const result = searchRegex.exec(this.text[this.line]) as RegExpExecArrayWithIndices | null;
+    const result = searchRegex.exec(
+      this.text[this.line]
+    ) as RegExpExecArrayWithIndices | null;
 
     if (result) {
-      
       this.column = searchRegex.lastIndex;
       // console.log(this.line, this.column);
 
@@ -52,22 +52,26 @@ class TextScanner {
   }
   findNextWithGroupNames(
     regex: RegExp | string,
-    matchCaptures: Record<number, string>
-  ) {
+    matchCaptures: Record<number, string> = {},
+    name: string = ""
+  ): { line: number; groups: any[] } | null {
+    let line = this.line;
     const result = this.findNext(regex);
     if (!result) return null;
-    console.log(result);
+    // console.log(result);
     const text = result[0].split("");
-    const keys = text.map(() => "");
-
+    const keys = text.map(() => name);
+    if (result[0] == "12sw") {
+      console.log(result);
+      console.log(result[0]);
+    }
     Object.entries(matchCaptures).forEach(([group, name]) => {
       const [start, end] = result.indices[group] ?? [0, 0];
 
-      keys.fill(name, start, end);
+      keys.fill(name, start - result.index, end - result.index);
     });
 
-
-    if (text.length === 0) return [];
+    if (text.length === 0) return {};
 
     const data: { name: string; content: string }[] = [
       { name: keys[0], content: text[0] },
@@ -83,17 +87,82 @@ class TextScanner {
 
       data.push({ name, content: text[i] });
     }
+    return { line, groups: data };
+  }
+}
+interface TextMateGrammars {
+  contentName: string;
+  patterns: any[];
+  repository: Record<string, any>;
+}
+const RULES: TextMateGrammars[] = [];
 
-    return data;
+RULES.push({
+  contentName: "js",
+  patterns: [
+    {
+      match: /([A-Z][a-zA-Z]+)(\.|:)([a-z]+)/,
+      captures: {
+        1: "entity.class",
+        2: "punctuacion",
+        3: "method",
+      },
+    },
+    {
+      name: "punctuation",
+      match: /\(/,
+    },
+    {
+      name: "text",
+      match: /[a-z]+/,
+    },
+    {
+      match: /((\d+)(\.?)(\d+))([a-z]+)/,
+      captures: {
+        2: "number",
+        3: 'meta.decimal',
+        4: "number",
+        5: "prefix",
+      },
+    },
+  ],
+  repository: {},
+});
+
+const a = new TextScanner(`VScode:dark(size: 12sw){
+     34.4sh         wwwwwwwwwwww
+}`);
+
+const patterns = RULES.find((m) => m.contentName === "js");
+interface Collection {
+  name: string;
+  content: string;
+}
+const collection: Collection[][] = [];
+for (let ai = 0; ai < a.lines; ai++) {
+  collection.push([]);
+}
+console.log(collection);
+
+for (let index = 0; index < 22; index++) {
+  if (a.isEndOfText) {
+    break;
+  }
+  let isFind = false;
+
+  for (const { match, captures, name } of patterns.patterns) {
+    const result = a.findNextWithGroupNames(match, captures, name);
+    if (result) {
+      collection[result.line].push(...result.groups);
+      isFind = true;
+      break;
+    }
+  }
+
+  if (!isFind) {
+    const result = a.findNextWithGroupNames(/\s+|./, {});
+    collection[result.line].push(...result.groups);
   }
 }
 
-const a = new TextScanner(`VScode:dark(size: 12){
-
-}`);
-
-const d =a.findNextWithGroupNames(/[A-Z][a-zA-Z]+(\.|:)([a-z]+)/, {
-  1: "punctuation",
-  2: "prefix",
-});
-console.log(d)
+console.log(collection);
