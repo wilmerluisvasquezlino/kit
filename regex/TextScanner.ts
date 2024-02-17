@@ -1,4 +1,11 @@
-import type { RegExpExecArrayWithIndices } from "./types";
+import RULES from "./tmLangs";
+import type {
+  Collection,
+  RegExpExecArrayWithIndices,
+  ScopeNames,
+  State,
+  TextMateGrammarsPatterns,
+} from "./types";
 
 class TextScanner {
   text: string[];
@@ -39,6 +46,12 @@ class TextScanner {
       if (this.column === this.text[this.line].length) {
         this.line += 1;
         this.column = 0;
+
+        // if (this.text[this.line]) {
+        //   if (this.text[this.line].length === 0) {
+        //     this.line+=1
+        //   }
+        // }
       }
 
       return result;
@@ -61,18 +74,16 @@ class TextScanner {
     // console.log(result);
     const text = result[0].split("");
     const keys = text.map(() => name);
-    if (result[0] == "12sw") {
-      console.log(result);
-      console.log(result[0]);
-    }
+    if (text.length === 0)
+      return { line, groups: [{ name, content: "" }] };
+
     Object.entries(matchCaptures).forEach(([group, name]) => {
-      const [start, end] = result.indices[group] ?? [0, 0];
+      const [start, end] = result.indices[Number(group)] ?? [0, 0];
 
       keys.fill(name, start - result.index, end - result.index);
     });
 
-    if (text.length === 0) return {};
-
+    // agrupamiento
     const data: { name: string; content: string }[] = [
       { name: keys[0], content: text[0] },
     ];
@@ -90,79 +101,163 @@ class TextScanner {
     return { line, groups: data };
   }
 }
-interface TextMateGrammars {
-  contentName: string;
-  patterns: any[];
-  repository: Record<string, any>;
-}
-const RULES: TextMateGrammars[] = [];
 
-RULES.push({
-  contentName: "js",
-  patterns: [
-    {
-      match: /([A-Z][a-zA-Z]+)(\.|:)([a-z]+)/,
-      captures: {
-        1: "entity.class",
-        2: "punctuacion",
-        3: "method",
-      },
-    },
-    {
-      name: "punctuation",
-      match: /\(/,
-    },
-    {
-      name: "text",
-      match: /[a-z]+/,
-    },
-    {
-      match: /((\d+)(\.?)(\d+))([a-z]+)/,
-      captures: {
-        2: "number",
-        3: 'meta.decimal',
-        4: "number",
-        5: "prefix",
-      },
-    },
-  ],
-  repository: {},
-});
 
-const a = new TextScanner(`VScode:dark(size: 12sw){
-     34.4sh         wwwwwwwwwwww
-}`);
+export function syntaxHig(text:string, lang:string) {
+  const textToBeAnalyzed = new TextScanner(text);
+  const patterns = RULES.find((m) => m.contentName === lang);
 
-const patterns = RULES.find((m) => m.contentName === "js");
-interface Collection {
-  name: string;
-  content: string;
-}
-const collection: Collection[][] = [];
-for (let ai = 0; ai < a.lines; ai++) {
-  collection.push([]);
-}
-console.log(collection);
+  if (patterns === undefined) return null;
 
-for (let index = 0; index < 22; index++) {
-  if (a.isEndOfText) {
-    break;
+  const state: State = {
+    scope: [patterns.patterns],
+    getLast() {
+      return this.scope[this.scope.length - 1];
+    },
+    deleteLast() {
+      if (this.scope.length === 1) return null;
+      this.scope.pop();
+    },
+    add(patterns) {
+      this.scope.push(patterns);
+    },
+  };
+  const scopeNames: ScopeNames = {
+    names: [],
+    add(...args:string[]) {
+      for (const m of args) {
+        this.names.push(m);
+      }
+    },
+    getLast() {
+      return this.names[this.names.length-1];
+    },
+    deleteLast() {
+      if (this.names.length > 1) this.names.pop();
+    },
+  };
+  scopeNames.add(patterns.contentName);
+  // Rellenando la Coleccion
+  const collection: Collection[][] = [];
+  for (let ai = 0; ai < textToBeAnalyzed.lines; ai++) {
+    collection.push([]);
   }
-  let isFind = false;
+  // console.log(collection);
 
-  for (const { match, captures, name } of patterns.patterns) {
-    const result = a.findNextWithGroupNames(match, captures, name);
-    if (result) {
-      collection[result.line].push(...result.groups);
-      isFind = true;
+  while (!textToBeAnalyzed.isEndOfText) {
+    if (textToBeAnalyzed.isEndOfText) {
       break;
+    }
+    let isFind = false;
+
+    for (const {
+      match,
+      matchEnd,
+      captures,
+      begin,
+      name,
+      end,
+      patterns,
+    } of state.getLast()) {
+      if (matchEnd) {
+        const result = textToBeAnalyzed.findNextWithGroupNames(
+          matchEnd,
+          captures,
+          name ?? scopeNames.getLast()
+        );
+        if (result) {
+          scopeNames.deleteLast();
+          collection[result.line].push(...result.groups);
+          isFind = true;
+          state.deleteLast();
+          break;
+        }
+      }
+      if (match) {
+        const result = textToBeAnalyzed.findNextWithGroupNames(
+          match,
+          captures,
+          name ?? scopeNames.getLast()
+        );
+        if (result) {
+          collection[result.line].push(...result.groups);
+          isFind = true;
+
+          break;
+        }
+      } else {
+        if (!begin) break;
+        const result = textToBeAnalyzed.findNextWithGroupNames(
+          begin,
+          captures,
+          name
+        );
+        if (result) {
+          scopeNames.add(name ?? '');
+          collection[result.line].push(...result.groups);
+          isFind = true;
+
+          const copyPatterns: TextMateGrammarsPatterns[] = [];
+          if (patterns) {
+            copyPatterns.push(...[...patterns]);
+          }
+
+          const matchEnd = { matchEnd: end, name };
+          copyPatterns.push(matchEnd);
+
+          state.add(copyPatterns);
+          break;
+        }
+      }
+    }
+
+    // is Find match
+    if (!isFind) {
+      const result = textToBeAnalyzed.findNextWithGroupNames(
+        /\s+|.|/,
+        {},
+        scopeNames.getLast()
+      )!;
+      collection[result.line].push(...result.groups);
     }
   }
 
-  if (!isFind) {
-    const result = a.findNextWithGroupNames(/\s+|./, {});
-    collection[result.line].push(...result.groups);
+  const collection2 = collection.map((line) => {
+    let keys = line.map(({ name }) => name);
+    let text = line.map(({ content }) => content);
+
+    const data: { name: string; content: string }[] = [
+      { name: keys[0], content: text[0] },
+    ];
+
+    for (let i = 1; i < keys.length; i++) {
+      const name = keys[i];
+
+      if (data[data.length - 1].name === name) {
+        data[data.length - 1].content += text[i];
+        continue;
+      }
+
+      data.push({ name, content: text[i] });
+    }
+    return data;
+  });
+
+  console.log(collection2);
+  // return collection;
+}
+
+syntaxHig(
+  `
+HStack( src: " ", alignItems: .center){
+  Image( src: "hola que tal \\n \\" hola a todos", alignItems: .center){
+
+  }
+  VStack(){
+    Girid{ }
   }
 }
 
-console.log(collection);
+`,
+  "js"
+);
